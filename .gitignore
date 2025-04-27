@@ -69,3 +69,4 @@ logs/
 question_list.md
 todo.md
 topic_list.md
+*.db
