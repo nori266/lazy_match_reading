@@ -4,11 +4,16 @@ A Python application that matches news articles to your specific questions using
 
 ## Features
 
-- Fetches news from multiple sources (Hacker News, TechCrunch, The Atlantic)
+- Fetches news from multiple sources (Hacker News, TechCrunch)
 - Uses Ollama for local LLM processing
-- Matches articles to your specific questions
+- Two-stage article matching:
+  - Fast initial filtering using embeddings (sentence-transformers)
+  - Precise matching using LLM verification
+- Supports both questions and topics for matching
 - Provides relevance explanations for matches
 - Beautiful Streamlit web interface for viewing results
+- Persistent storage of matched articles using SQLite
+- Real-time article processing with SSE (Server-Sent Events)
 
 ## Prerequisites
 
@@ -28,7 +33,11 @@ pip install -r requirements.txt
 NEWS_API_KEY=your_api_key_here
 ```
 
-3. Make sure Ollama is running locally with the model specified in `config.py` (default: llama2)
+3. Make sure Ollama is running locally with the model specified in `config.py` (default: llama3.1:8b)
+
+4. Create your question and topic lists:
+   - Create `question_list.md` with your questions (one per line, prefixed with '- ')
+   - Create `topic_list.md` with your topics (one per line, prefixed with '- ')
 
 ## Running the Application
 
@@ -66,9 +75,24 @@ You can modify the following in `config.py`:
 - Ollama model and URL
 - News API configuration
 
+## Database
+
+The application uses SQLite to store:
+- Matched articles
+- Match details and scores
+- Processing history
+
 ## Notes
 
 - The application uses newspaper3k for article content extraction
 - Make sure you have sufficient RAM for running the LLM model
 - Processing time may vary depending on the number of articles and the LLM model used
-- The Streamlit interface requires the FastAPI server to be running 
+- The Streamlit interface requires the FastAPI server to be running
+- Articles are matched using both embedding similarity and LLM verification
+- Only articles that pass both matching stages are stored and displayed
+
+## Coming Soon
+
+- Telegram bot integration for instant notifications
+- Multi-user support with individual question/topic lists
+- Question/topic management via Telegram commands
