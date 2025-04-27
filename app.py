@@ -45,6 +45,12 @@ st.markdown("""
     .new-article {
         border: 2px solid #4CAF50;
     }
+    .match-card.topic {
+        background-color: #e6ffe6;
+    }
+    .match-card.question {
+        background-color: #e6f3ff;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -94,9 +100,13 @@ def display_article(article, is_new=False):
     """, unsafe_allow_html=True)
     
     for match in article['matches']:
+        # Add different styling based on match type
+        match_class = "match-card topic" if match['type'] == 'topic' else "match-card question"
+        
         st.markdown(f"""
-        <div class="match-card">
-            <p><strong>Question:</strong> {match['question']}</p>
+        <div class="{match_class}">
+            <p><strong>Type:</strong> {match['type'].capitalize()}</p>
+            <p><strong>Match:</strong> {match['question']}</p>
             <p><strong>Relevance:</strong> {match['relevance']}</p>
             <p><strong>LLM Response:</strong> {match['llm_response']}</p>
         </div>
