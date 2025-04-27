@@ -3,6 +3,7 @@ from typing import List, Dict
 import config
 from newspaper import Article
 import json
+from datetime import datetime
 
 class NewsFetcher:
     def __init__(self):
@@ -26,6 +27,7 @@ class NewsFetcher:
                 "title": article["title"],
                 "url": article["url"],
                 "source": source,
+                "date": article.get("publishedAt", ""),
                 "content": self._get_article_content(article["url"])
             } for article in articles]
         except Exception as e:
@@ -46,10 +48,13 @@ class NewsFetcher:
                 story_data = story_response.json()
                 
                 if story_data.get("url"):
+                    # Convert Unix timestamp to ISO format
+                    date = datetime.fromtimestamp(story_data.get("time", 0)).isoformat() if story_data.get("time") else ""
                     articles.append({
                         "title": story_data.get("title", ""),
                         "url": story_data.get("url"),
                         "source": "hacker-news",
+                        "date": date,
                         "content": self._get_article_content(story_data.get("url"))
                     })
             return articles

@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import time
 import sseclient
+from database import ArticleDatabase
 
 # Configure the page
 st.set_page_config(
@@ -31,6 +32,19 @@ st.markdown("""
         border-radius: 5px;
         background-color: #e6f3ff;
     }
+    .article-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    .article-date {
+        color: #666;
+        font-size: 0.9em;
+    }
+    .new-article {
+        border: 2px solid #4CAF50;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,17 +52,44 @@ st.markdown("""
 st.title("📰 News Matcher")
 st.markdown("""
 This app matches news articles with your specific questions using AI.
-Articles are fetched from Hacker News, TechCrunch, and The Atlantic.
+Articles are fetched from Hacker News and TechCrunch.
 """)
+
+# Initialize database
+db = ArticleDatabase()
 
 # API endpoint
 API_URL = "http://localhost:8000/fetch-news"
 
-def display_article(article):
+def format_date(date_str):
+    """Format the date string to a more readable format"""
+    try:
+        if isinstance(date_str, str):
+            # Try different date formats
+            for fmt in ['%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%d']:
+                try:
+                    date = datetime.strptime(date_str, fmt)
+                    return date.strftime('%B %d, %Y')
+                except ValueError:
+                    continue
+        return date_str
+    except Exception:
+        return date_str
+
+def display_article(article, is_new=False):
     """Display a single article with its matches"""
+    # Format the date if available
+    date_str = format_date(article.get('date', ''))
+    
+    # Add new-article class if it's a new article
+    card_class = "article-card new-article" if is_new else "article-card"
+    
     st.markdown(f"""
-    <div class="article-card">
-        <h3><a href="{article['url']}" target="_blank">{article['title']}</a></h3>
+    <div class="{card_class}">
+        <div class="article-header">
+            <h3><a href="{article['url']}" target="_blank">{article['title']}</a></h3>
+            <span class="article-date">{date_str}</span>
+        </div>
         <p><em>Source: {article['source']}</em></p>
     """, unsafe_allow_html=True)
     
@@ -57,6 +98,7 @@ def display_article(article):
         <div class="match-card">
             <p><strong>Question:</strong> {match['question']}</p>
             <p><strong>Relevance:</strong> {match['relevance']}</p>
+            <p><strong>LLM Response:</strong> {match['llm_response']}</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -66,11 +108,13 @@ def main():
     # Initialize session state for articles if not exists
     if 'articles' not in st.session_state:
         st.session_state.articles = []
+        # Load recent articles from database
+        st.session_state.articles = db.get_recent_articles(limit=30)
     
     # Add a refresh button
     if st.button("🔄 Refresh News"):
         st.session_state.last_refresh = datetime.now()
-        st.session_state.articles = []  # Clear previous articles
+        st.session_state.articles = db.get_recent_articles(limit=30)  # Reload recent articles
         st.experimental_rerun()
     
     # Show last refresh time if available
@@ -80,7 +124,13 @@ def main():
     # Create a placeholder for the articles
     articles_placeholder = st.empty()
     
-    # Fetch and display news
+    # Display existing articles from database
+    with articles_placeholder.container():
+        st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
+        for article in st.session_state.articles:
+            display_article(article)
+    
+    # Fetch and display new news
     with st.spinner("Fetching and analyzing news articles..."):
         try:
             # Create SSE client
@@ -97,12 +147,16 @@ def main():
                             break
                         
                         # Add new article to session state
-                        st.session_state.articles.append(data)
+                        st.session_state.articles.insert(0, data)  # Add to beginning
+                        st.session_state.articles = st.session_state.articles[:30]  # Keep only 30 most recent
                         
-                        # Update the display
+                        # Update the display immediately for each new article
                         with articles_placeholder.container():
-                            st.subheader(f"Found {len(st.session_state.articles)} matching articles")
-                            for article in st.session_state.articles:
+                            st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
+                            # Display only the most recent article first
+                            display_article(st.session_state.articles[0], is_new=True)
+                            # Then display all previous articles
+                            for article in st.session_state.articles[1:]:
                                 display_article(article)
                     except json.JSONDecodeError:
                         continue
