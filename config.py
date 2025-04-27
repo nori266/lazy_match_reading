@@ -17,9 +17,8 @@ OLLAMA_MODEL = "llama3.1:8b"  # Using llama3.1:8b model which is available in yo
 # News sources
 SOURCES = [
     "techcrunch",
-    "the-atlantic",
     "hacker-news"
 ]
 
 # Number of articles to fetch per source
-MAX_ARTICLES_PER_SOURCE = 10 
+MAX_ARTICLES_PER_SOURCE = 30 

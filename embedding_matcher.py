@@ -4,7 +4,7 @@ from typing import List, Dict
 
 class EmbeddingMatcher:
     def __init__(self):
-        self.model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+        self.model = SentenceTransformer('sentence-t5-base')
         self.index = None
         self.questions = []
         
@@ -27,5 +27,5 @@ class EmbeddingMatcher:
                 "score": float(similarities[0][idx])
             }
             for idx in top_indices
-            if similarities[0][idx] > 0.55
+            if similarities[0][idx] > 0.7
         ]

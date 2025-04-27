@@ -64,3 +64,8 @@ logs/
 .cache/
 .pytest_cache/
 .mypy_cache/ 
+
+# Data
+question_list.md
+todo.md
+topic_list.md
