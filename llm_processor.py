@@ -18,16 +18,25 @@ class ArticleMatcher:
         logger.info("Initialized ArticleMatcher with two-stage filtering and database persistence")
 
     def _get_questions(self) -> List[str]:
-        """Read questions from the question list file"""
+        """Read questions and topics from the markdown files"""
         try:
+            questions = []
+            
+            # Read questions from question_list.md
             with open("question_list.md", "r") as f:
                 content = f.read()
-                # Split by newlines and filter out empty lines
-                questions = [line.strip("- ").strip() for line in content.split("\n") if line.strip()]
-                logger.info(f"Loaded {len(questions)} questions from question_list.md")
-                return questions
+                questions.extend([line.strip("- ").strip() for line in content.split("\n") if line.strip()])
+            
+            # Read topics from topic_list.md
+            with open("topic_list.md", "r") as f:
+                content = f.read()
+                topics = [line.strip("- ").strip() for line in content.split("\n") if line.strip()]
+                questions.extend(topics)
+            
+            logger.info(f"Loaded {len(questions)} total items (questions + topics) for matching")
+            return questions
         except Exception as e:
-            logger.error(f"Error reading questions: {str(e)}")
+            logger.error(f"Error reading questions/topics: {str(e)}")
             return []
 
     def _verify_with_ollama(self, article: Dict, question: str) -> Dict:
@@ -70,13 +79,13 @@ class ArticleMatcher:
             }
 
     def process_article(self, article: Dict) -> Dict:
-        """Process an article to find matching questions using two-stage filtering"""
+        """Process an article to find matching questions and topics using two-stage filtering"""
         questions = self._get_questions()
         
         try:
             logger.info(f"Processing article: {article['title']}")
             
-            # First stage: Find similar questions using embeddings
+            # First stage: Find similar questions/topics using embeddings
             similar_matches = self.matcher.find_similar(article["content"], questions)
             
             # Second stage: Verify matches with Ollama
@@ -84,10 +93,15 @@ class ArticleMatcher:
             for match in similar_matches:
                 verification = self._verify_with_ollama(article, match["text"])
                 if verification["is_relevant"]:
+                    # Determine if this is a topic or question match
+                    is_topic = match["text"] in [line.strip("- ").strip() for line in open("topic_list.md").read().split("\n") if line.strip()]
+                    match_type = "topic" if is_topic else "question"
+                    
                     verified_matches.append({
                         "question": match["text"],
-                        "relevance": f"Verified match (similarity: {match['score']:.2f})",
-                        "llm_response": verification["llm_response"]
+                        "relevance": f"Verified {match_type} match (similarity: {match['score']:.2f})",
+                        "llm_response": verification["llm_response"],
+                        "type": match_type
                     })
             
             processed_article = {

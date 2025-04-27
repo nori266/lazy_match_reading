@@ -35,6 +35,7 @@ class ArticleDatabase:
                     question TEXT NOT NULL,
                     similarity_score REAL NOT NULL,
                     llm_response TEXT NOT NULL,
+                    match_type TEXT NOT NULL,
                     FOREIGN KEY (article_id) REFERENCES articles (id)
                 )
             ''')
@@ -71,13 +72,14 @@ class ArticleDatabase:
             for match in article['matches']:
                 cursor.execute('''
                     INSERT INTO matches 
-                    (article_id, question, similarity_score, llm_response)
-                    VALUES (?, ?, ?, ?)
+                    (article_id, question, similarity_score, llm_response, match_type)
+                    VALUES (?, ?, ?, ?, ?)
                 ''', (
                     article_id,
                     match['question'],
                     float(match['relevance'].split('similarity: ')[1].split(')')[0]),
-                    match['llm_response']
+                    match['llm_response'],
+                    match['type']
                 ))
             
             conn.commit()
@@ -191,7 +193,7 @@ class ArticleDatabase:
                 
                 # Get matches for this article
                 cursor.execute('''
-                    SELECT question, similarity_score, llm_response
+                    SELECT question, similarity_score, llm_response, match_type
                     FROM matches
                     WHERE article_id = ?
                 ''', (article_id,))
@@ -199,10 +201,11 @@ class ArticleDatabase:
                 matches = [
                     {
                         'question': question,
-                        'relevance': f'Verified match (similarity: {score:.2f})',
-                        'llm_response': llm_response
+                        'relevance': f'Verified {match_type} match (similarity: {score:.2f})',
+                        'llm_response': llm_response,
+                        'type': match_type
                     }
-                    for question, score, llm_response in cursor.fetchall()
+                    for question, score, llm_response, match_type in cursor.fetchall()
                 ]
                 
                 articles.append({
