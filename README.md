@@ -1,6 +1,8 @@
 # News Matcher
 
-A Python application that matches news articles to your specific questions using Ollama and various news sources.
+AI-powered news filtering system that matches articles to your specific questions and topics. Uses a two-stage matching process combining embeddings and LLM verification (via Ollama) to find relevant news from various sources. Features a real-time Streamlit interface and persistent storage.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
