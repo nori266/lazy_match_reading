@@ -22,4 +22,14 @@ SOURCES = [
 ]
 
 # Number of articles to fetch per source
-MAX_ARTICLES_PER_SOURCE = 30 
+MAX_ARTICLES_PER_SOURCE = 30
+
+# Telegram Bot configuration
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Optional: for direct messaging to specific chat
+TELEGRAM_NOTIFICATION_THRESHOLD = 0.7  # Minimum similarity score to send notification
+
+# Embedding Matcher configuration
+EMBEDDING_SIMILARITY_THRESHOLD = 0.7  # Minimum similarity score for initial article filtering
+
+TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN")

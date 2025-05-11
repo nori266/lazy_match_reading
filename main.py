@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from news_fetcher import NewsFetcher
-from llm_processor import ArticleMatcher  # Updated import
+from llm_processor import ArticleMatcher
+from telegram_bot import telegram_bot
 import uvicorn
 import json
+import asyncio
 
 app = FastAPI()
 
@@ -18,7 +20,17 @@ app.add_middleware(
 )
 
 news_fetcher = NewsFetcher()
-article_matcher = ArticleMatcher()  # Updated instance
+article_matcher = ArticleMatcher()
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the Telegram bot when the application starts"""
+    await telegram_bot.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop the Telegram bot when the application shuts down"""
+    await telegram_bot.stop()
 
 @app.get("/")
 async def root():
@@ -32,6 +44,12 @@ async def process_and_stream_articles():
         
         # Process articles and stream results
         for processed_article in article_matcher.process_articles(articles):
+            # Send notification if article matches criteria
+            if processed_article.get('matches', []):
+                await telegram_bot.send_article_notification(
+                    processed_article,
+                    max(match.get('similarity_score', 0) for match in processed_article['matches'])
+                )
             yield f"data: {json.dumps(processed_article)}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"

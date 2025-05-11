@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from typing import List, Dict
+import config
 
 class EmbeddingMatcher:
     def __init__(self):
@@ -27,5 +28,5 @@ class EmbeddingMatcher:
                 "score": float(similarities[0][idx])
             }
             for idx in top_indices
-            if similarities[0][idx] > 0.7
+            if similarities[0][idx] > config.EMBEDDING_SIMILARITY_THRESHOLD
         ]
