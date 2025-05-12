@@ -149,7 +149,7 @@ def main():
     if st.button("🔄 Refresh News"):
         st.session_state.last_refresh = datetime.now()
         st.session_state.articles = db.get_recent_articles(limit=30)  # Reload recent articles
-        st.experimental_rerun()
+        st.rerun()
     
     # Show last refresh time if available
     if 'last_refresh' in st.session_state:
