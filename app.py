@@ -5,6 +5,7 @@ from datetime import datetime
 import time
 import sseclient
 from database import ArticleDatabase
+import config
 
 # Configure the page
 st.set_page_config(
@@ -64,8 +65,13 @@ Articles are fetched from Hacker News and TechCrunch.
 # Initialize database
 db = ArticleDatabase()
 
-# API endpoint
-API_URL = "http://localhost:8000/fetch-news"
+# API endpoint configuration
+if config.IS_STREAMLIT:
+    # In Streamlit Share, we'll process articles directly
+    API_URL = None
+else:
+    # Local development - connect to FastAPI server
+    API_URL = "http://localhost:8000/fetch-news"
 
 def format_date(date_str):
     """Format the date string to a more readable format"""
@@ -114,6 +120,24 @@ def display_article(article, is_new=False):
     
     st.markdown("</div>", unsafe_allow_html=True)
 
+def process_articles_directly():
+    """Process articles directly in Streamlit environment"""
+    from news_fetcher import NewsFetcher
+    from llm_processor import ArticleMatcher
+    
+    news_fetcher = NewsFetcher()
+    article_matcher = ArticleMatcher()
+    
+    articles = news_fetcher.fetch_all_articles()
+    processed_articles = []
+    
+    for article in article_matcher.process_articles(articles):
+        processed_articles.append(article)
+        # Save to database
+        db.save_article(article)
+    
+    return processed_articles
+
 def main():
     # Initialize session state for articles if not exists
     if 'articles' not in st.session_state:
@@ -143,37 +167,48 @@ def main():
     # Fetch and display new news
     with st.spinner("Fetching and analyzing news articles..."):
         try:
-            # Create SSE client
-            response = requests.get(API_URL, stream=True)
-            client = sseclient.SSEClient(response)
-            
-            # Process each event as it arrives
-            for event in client.events():
-                if event.data:
-                    try:
-                        data = json.loads(event.data)
-                        if 'error' in data:
-                            st.error(f"Error: {data['error']}")
-                            break
-                        
-                        # Add new article to session state
-                        st.session_state.articles.insert(0, data)  # Add to beginning
-                        st.session_state.articles = st.session_state.articles[:30]  # Keep only 30 most recent
-                        
-                        # Update the display immediately for each new article
-                        with articles_placeholder.container():
-                            st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
-                            # Display only the most recent article first
-                            display_article(st.session_state.articles[0], is_new=True)
-                            # Then display all previous articles
-                            for article in st.session_state.articles[1:]:
-                                display_article(article)
-                    except json.JSONDecodeError:
-                        continue
+            if API_URL:  # Local development - use FastAPI server
+                # Create SSE client
+                response = requests.get(API_URL, stream=True)
+                client = sseclient.SSEClient(response)
+                
+                # Process each event as it arrives
+                for event in client.events():
+                    if event.data:
+                        try:
+                            data = json.loads(event.data)
+                            if 'error' in data:
+                                st.error(f"Error: {data['error']}")
+                                break
+                            
+                            # Add new article to session state
+                            st.session_state.articles.insert(0, data)  # Add to beginning
+                            st.session_state.articles = st.session_state.articles[:30]  # Keep only 30 most recent
+                            
+                            # Update the display immediately for each new article
+                            with articles_placeholder.container():
+                                st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
+                                # Display only the most recent article first
+                                display_article(st.session_state.articles[0], is_new=True)
+                                # Then display all previous articles
+                                for article in st.session_state.articles[1:]:
+                                    display_article(article)
+                        except json.JSONDecodeError:
+                            continue
+            else:  # Streamlit Share - process articles directly
+                new_articles = process_articles_directly()
+                if new_articles:
+                    st.session_state.articles = new_articles[:30]  # Keep only 30 most recent
+                    with articles_placeholder.container():
+                        st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
+                        for article in st.session_state.articles:
+                            display_article(article)
+                else:
+                    st.info("No new matching articles found.")
         except Exception as e:
-            st.error(f"Error connecting to the API: {str(e)}")
+            st.error(f"Error processing articles: {str(e)}")
     
-    # Display final results if no streaming updates
+    # Display final results if no articles found
     if not st.session_state.articles:
         st.info("No matching articles found. Try refreshing or check if the API is running.")
 

@@ -1,7 +1,12 @@
 import os
+import platform
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Environment detection
+IS_MAC = platform.system() == "Darwin"
+IS_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING", "false").lower() == "true"
 
 # News API configuration
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
@@ -10,9 +15,22 @@ NEWS_API_BASE_URL = "https://newsapi.org/v2"
 # Hacker News API configuration
 HN_API_BASE_URL = "https://hacker-news.firebaseio.com/v0"
 
-# Ollama configuration
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1:8b"  # Using llama3.1:8b model which is available in your installation
+# LLM Configuration
+if IS_MAC:
+    # Ollama configuration for Mac
+    LLM_TYPE = "ollama"
+    OLLAMA_BASE_URL = "http://localhost:11434"
+    OLLAMA_MODEL = "llama3.1:8b"
+elif IS_STREAMLIT:
+    # Gemini configuration for Streamlit
+    LLM_TYPE = "gemini"
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GEMINI_MODEL = "gemini-2.5-flash-preview-04-17"
+else:
+    # Default to Ollama if environment is not recognized
+    LLM_TYPE = "ollama"
+    OLLAMA_BASE_URL = "http://localhost:11434"
+    OLLAMA_MODEL = "llama3.1:8b"
 
 # News sources
 SOURCES = [

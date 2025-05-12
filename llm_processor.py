@@ -5,6 +5,7 @@ from embedding_matcher import EmbeddingMatcher
 import requests
 import config
 from database import ArticleDatabase
+import google.generativeai as genai
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -13,9 +14,17 @@ logger = logging.getLogger(__name__)
 class ArticleMatcher:
     def __init__(self):
         self.matcher = EmbeddingMatcher()
-        self.ollama_url = f"{config.OLLAMA_BASE_URL}/api/generate"
         self.db = ArticleDatabase()
-        logger.info("Initialized ArticleMatcher with two-stage filtering and database persistence")
+        
+        # Initialize LLM based on environment
+        if config.LLM_TYPE == "ollama":
+            self.llm_url = f"{config.OLLAMA_BASE_URL}/api/generate"
+            self.llm_model = config.OLLAMA_MODEL
+        elif config.LLM_TYPE == "gemini":
+            genai.configure(api_key=config.GEMINI_API_KEY)
+            self.llm_model = genai.GenerativeModel(config.GEMINI_MODEL)
+        
+        logger.info(f"Initialized ArticleMatcher with {config.LLM_TYPE} LLM and database persistence")
 
     def _get_questions(self) -> List[str]:
         """Read questions and topics from the markdown files"""
@@ -39,8 +48,8 @@ class ArticleMatcher:
             logger.error(f"Error reading questions/topics: {str(e)}")
             return []
 
-    def _verify_with_ollama(self, article: Dict, question: str) -> Dict:
-        """Verify article relevance with Ollama"""
+    def _verify_with_llm(self, article: Dict, question: str) -> Dict:
+        """Verify article relevance with the configured LLM"""
         prompt = f"""Analyze if this article is relevant to the question/topic. 
         Respond with only 'yes' or 'no'.
 
@@ -52,17 +61,21 @@ class ArticleMatcher:
         Is this article relevant to the question/topic?"""
 
         try:
-            response = requests.post(
-                self.ollama_url,
-                json={
-                    "model": config.OLLAMA_MODEL,
-                    "prompt": prompt,
-                    "stream": False
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
-            answer = result.get("response", "").strip().lower()
+            if config.LLM_TYPE == "ollama":
+                response = requests.post(
+                    self.llm_url,
+                    json={
+                        "model": self.llm_model,
+                        "prompt": prompt,
+                        "stream": False
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                answer = result.get("response", "").strip().lower()
+            else:  # Gemini
+                response = self.llm_model.generate_content(prompt)
+                answer = response.text.strip().lower()
             
             # Log the LLM's response
             logger.info(f"LLM verification for article '{article['title']}' and question '{question}': {answer}")
@@ -72,7 +85,7 @@ class ArticleMatcher:
                 "llm_response": answer
             }
         except Exception as e:
-            logger.error(f"Error verifying with Ollama: {str(e)}")
+            logger.error(f"Error verifying with {config.LLM_TYPE}: {str(e)}")
             return {
                 "is_relevant": False,
                 "llm_response": f"Error: {str(e)}"
@@ -88,10 +101,10 @@ class ArticleMatcher:
             # First stage: Find similar questions/topics using embeddings
             similar_matches = self.matcher.find_similar(article["content"], questions)
             
-            # Second stage: Verify matches with Ollama
+            # Second stage: Verify matches with LLM
             verified_matches = []
             for match in similar_matches:
-                verification = self._verify_with_ollama(article, match["text"])
+                verification = self._verify_with_llm(article, match["text"])
                 if verification["is_relevant"]:
                     # Determine if this is a topic or question match
                     is_topic = match["text"] in [line.strip("- ").strip() for line in open("topic_list.md").read().split("\n") if line.strip()]
