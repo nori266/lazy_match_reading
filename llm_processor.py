@@ -1,4 +1,3 @@
-import json
 from typing import List, Dict, Generator
 import logging
 from embedding_matcher import EmbeddingMatcher
@@ -12,9 +11,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ArticleMatcher:
-    def __init__(self):
+    def __init__(self, questions_text="", topics_text=""):
         self.matcher = EmbeddingMatcher()
         self.db = ArticleDatabase()
+        self.questions_text = questions_text
+        self.topics_text = topics_text
         
         # Initialize LLM based on environment
         if config.LLM_TYPE == "ollama":
@@ -27,25 +28,37 @@ class ArticleMatcher:
         logger.info(f"Initialized ArticleMatcher with {config.LLM_TYPE} LLM and database persistence")
 
     def _get_questions(self) -> List[str]:
-        """Read questions and topics from the markdown files"""
+        """Get questions and topics from either files or provided text"""
         try:
             questions = []
             
-            # Read questions from question_list.md
-            with open("question_list.md", "r") as f:
-                content = f.read()
-                questions.extend([line.strip("- ").strip() for line in content.split("\n") if line.strip()])
-            
-            # Read topics from topic_list.md
-            with open("topic_list.md", "r") as f:
-                content = f.read()
-                topics = [line.strip("- ").strip() for line in content.split("\n") if line.strip()]
-                questions.extend(topics)
+            if config.IS_STREAMLIT and (self.questions_text or self.topics_text):
+                # Use provided text in Streamlit environment
+                if self.questions_text:
+                    questions.extend([line.strip("- ").strip() for line in self.questions_text.split("\n") if line.strip()])
+                if self.topics_text:
+                    questions.extend([line.strip("- ").strip() for line in self.topics_text.split("\n") if line.strip()])
+            else:
+                # Fall back to reading from files
+                try:
+                    # Read questions from question_list.md
+                    with open("question_list.md", "r") as f:
+                        content = f.read()
+                        questions.extend([line.strip("- ").strip() for line in content.split("\n") if line.strip()])
+                    
+                    # Read topics from topic_list.md
+                    with open("topic_list.md", "r") as f:
+                        content = f.read()
+                        topics = [line.strip("- ").strip() for line in content.split("\n") if line.strip()]
+                        questions.extend(topics)
+                except FileNotFoundError:
+                    logger.warning("Question or topic files not found. Please provide questions and topics in the app.")
+                    return []
             
             logger.info(f"Loaded {len(questions)} total items (questions + topics) for matching")
             return questions
         except Exception as e:
-            logger.error(f"Error reading questions/topics: {str(e)}")
+            logger.error(f"Error processing questions/topics: {str(e)}")
             return []
 
     def _verify_with_llm(self, article: Dict, question: str) -> Dict:

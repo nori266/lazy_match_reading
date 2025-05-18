@@ -5,7 +5,6 @@ from news_fetcher import NewsFetcher
 from llm_processor import ArticleMatcher
 import uvicorn
 import json
-import asyncio
 
 app = FastAPI()
 

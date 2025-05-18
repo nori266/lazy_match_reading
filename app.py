@@ -120,13 +120,13 @@ def display_article(article, is_new=False):
     
     st.markdown("</div>", unsafe_allow_html=True)
 
-def process_articles_directly():
+def process_articles_directly(questions_text="", topics_text=""):
     """Process articles directly in Streamlit environment"""
     from news_fetcher import NewsFetcher
     from llm_processor import ArticleMatcher
     
     news_fetcher = NewsFetcher()
-    article_matcher = ArticleMatcher()
+    article_matcher = ArticleMatcher(questions_text=questions_text, topics_text=topics_text)
     
     articles = news_fetcher.fetch_all_articles()
     processed_articles = []
@@ -139,11 +139,28 @@ def process_articles_directly():
     return processed_articles
 
 def main():
+    st.title("News Matcher")
+    
     # Initialize session state for articles if not exists
     if 'articles' not in st.session_state:
         st.session_state.articles = []
         # Load recent articles from database
         st.session_state.articles = db.get_recent_articles(limit=30)
+    
+    # Add text areas for questions and topics in Streamlit
+    questions_text = ""
+    topics_text = ""
+    
+    if config.IS_STREAMLIT:
+        with st.sidebar:
+            st.subheader("Questions & Topics")
+            st.write("Enter your questions (one per line):")
+            questions_text = st.text_area("Questions", height=200, 
+                                       placeholder="Enter each question on a new line\nExample:\n- What are the latest developments in AI?\n- Any news about climate change?")
+            
+            st.write("Enter your topics of interest (one per line):")
+            topics_text = st.text_area("Topics", height=200,
+                                    placeholder="Enter each topic on a new line\nExample:\n- Artificial Intelligence\n- Climate Change\n- Space Exploration")
     
     # Add a refresh button
     if st.button("🔄 Refresh News"):
@@ -196,15 +213,21 @@ def main():
                         except json.JSONDecodeError:
                             continue
             else:  # Streamlit Share - process articles directly
-                new_articles = process_articles_directly()
-                if new_articles:
-                    st.session_state.articles = new_articles[:30]  # Keep only 30 most recent
-                    with articles_placeholder.container():
-                        st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
-                        for article in st.session_state.articles:
-                            display_article(article)
+                if not questions_text.strip() and not topics_text.strip():
+                    st.warning("Please enter some questions or topics to match against.")
                 else:
-                    st.info("No new matching articles found.")
+                    with st.spinner("Processing articles with your questions and topics..."):
+                        new_articles = process_articles_directly(questions_text, topics_text)
+                        if new_articles:
+                            st.session_state.articles = new_articles[:30]  # Keep only 30 most recent
+                            st.rerun()  # Rerun to update the display with new articles
+                        else:
+                            st.info("No new matching articles found.")
+                        
+                        with articles_placeholder.container():
+                            st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
+                            for article in st.session_state.articles:
+                                display_article(article)
         except Exception as e:
             st.error(f"Error processing articles: {str(e)}")
     
