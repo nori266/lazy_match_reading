@@ -61,17 +61,28 @@ class ArticleMatcher:
             logger.error(f"Error processing questions/topics: {str(e)}")
             return []
 
-    def _verify_with_llm(self, article: Dict, question: str) -> Dict:
-        """Verify article relevance with the configured LLM"""
-        prompt = f"""Analyze if this article is relevant to the question/topic. 
-        Respond with only 'yes' or 'no'.
+    def _verify_with_llm(self, article: Dict, questions: List[str]) -> List[Dict]:
+        """Verify article relevance against multiple questions/topics with a single LLM call"""
+        if not questions:
+            return []
+            
+        # Create a numbered list of questions for the prompt
+        questions_list = '\n'.join([f"{i+1}. {q}" for i, q in enumerate(questions)])
+        
+        prompt = f"""Analyze if this article is relevant to each of the following questions/topics. 
+For each question, respond with a single line containing the question number followed by 'yes' or 'no'.
 
-        Article Title: {article['title']}
-        Article Content: {article['content'][:1000]}  # Limit content length
-        
-        Question/Topic: {question}
-        
-        Is this article relevant to the question/topic?"""
+Article Title: {article['title']}
+Article Content: {article['content'][:2000]}  # Limit content length
+
+Questions/Topics:
+{questions_list}
+
+For each question above, respond with the question number followed by 'yes' or 'no' on separate lines. 
+Example:
+1. yes
+2. no
+3. no"""
 
         try:
             if config.LLM_TYPE == "ollama":
@@ -85,24 +96,51 @@ class ArticleMatcher:
                 )
                 response.raise_for_status()
                 result = response.json()
-                answer = result.get("response", "").strip().lower()
+                response_text = result.get("response", "")
             else:  # Gemini
                 response = self.llm_model.generate_content(prompt)
-                answer = response.text.strip().lower()
+                response_text = response.text
+            
+            # Parse the response into a dictionary of {question: answer}
+            answers = {}
+            for line in response_text.split('\n'):
+                line = line.strip()
+                if not line or not line[0].isdigit():
+                    continue
+                try:
+                    # Extract question number and answer (e.g., "1. yes" -> (0, "yes"))
+                    parts = line.split('.', 1)
+                    if len(parts) == 2:
+                        q_num = int(parts[0].strip()) - 1  # Convert to 0-based index
+                        answer = parts[1].strip().lower()
+                        if 0 <= q_num < len(questions):
+                            answers[questions[q_num]] = answer
+                except (ValueError, IndexError):
+                    continue
             
             # Log the LLM's response
-            logger.info(f"LLM verification for article '{article['title']}' and question '{question}': {answer}")
+            logger.info(f"LLM verification for article '{article['title']}' completed with {len(answers)} answers")
             
-            return {
-                "is_relevant": answer == "yes",
-                "llm_response": answer
-            }
+            # Return list of results in the same order as input questions
+            results = []
+            for q in questions:
+                answer = answers.get(q, 'no')  # Default to 'no' if answer not found
+                results.append({
+                    'question': q,
+                    'is_relevant': answer == 'yes',
+                    'llm_response': answer
+                })
+            
+            return results
+            
         except Exception as e:
             logger.error(f"Error verifying with {config.LLM_TYPE}: {str(e)}")
-            return {
-                "is_relevant": False,
-                "llm_response": f"Error: {str(e)}"
-            }
+            # Return default 'no' for all questions in case of error
+            return [{
+                'question': q,
+                'is_relevant': False,
+                'llm_response': f"Error: {str(e)}"
+            } for q in questions]
 
     def process_article(self, article: Dict) -> Dict:
         """Process an article to find matching questions and topics using two-stage filtering"""
@@ -114,21 +152,31 @@ class ArticleMatcher:
             # First stage: Find similar questions/topics using embeddings
             similar_matches = self.matcher.find_similar(article["content"], questions)
             
-            # Second stage: Verify matches with LLM
-            verified_matches = []
-            for match in similar_matches:
-                verification = self._verify_with_llm(article, match["text"])
-                if verification["is_relevant"]:
-                    # Determine if this is a topic or question match
+            # Second stage: Verify matches with LLM (batch verification)
+            if similar_matches:
+                # Group matches by type for batch processing
+                matches_by_type = {}
+                for match in similar_matches:
                     is_topic = match["text"] in [line.strip("- ").strip() for line in open("topic_list.md").read().split("\n") if line.strip()]
                     match_type = "topic" if is_topic else "question"
+                    matches_by_type.setdefault(match_type, []).append(match)
+                
+                # Process all matches in batches by type
+                verified_matches = []
+                for match_type, matches in matches_by_type.items():
+                    questions = [m["text"] for m in matches]
+                    verifications = self._verify_with_llm(article, questions)
                     
-                    verified_matches.append({
-                        "question": match["text"],
-                        "relevance": f"Verified {match_type} match (similarity: {match['score']:.2f})",
-                        "llm_response": verification["llm_response"],
-                        "type": match_type
-                    })
+                    for match, verification in zip(matches, verifications):
+                        if verification["is_relevant"]:
+                            verified_matches.append({
+                                "question": match["text"],
+                                "relevance": f"Verified {match_type} match (similarity: {match['score']:.2f})",
+                                "llm_response": verification["llm_response"],
+                                "type": match_type
+                            })
+            else:
+                verified_matches = []
             
             processed_article = {
                 "title": article["title"],

@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Environment detection
-IS_MAC = platform.system() == "Darwin"
+# IS_MAC = platform.system() == "Darwin"
+IS_MAC = False
 IS_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING", "false").lower() == "true"
 
 # News API configuration
@@ -25,7 +26,8 @@ elif IS_STREAMLIT:
     # Gemini configuration for Streamlit
     LLM_TYPE = "gemini"
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL = "gemini-2.5-flash-preview-04-17"
+    # GEMINI_MODEL = "gemini-2.5-flash-preview-04-17"
+    GEMINI_MODEL = "gemini-2.0-flash-lite"
 else:
     # Default to Ollama if environment is not recognized
     LLM_TYPE = "ollama"
