@@ -47,6 +47,7 @@ MAX_ARTICLES_PER_SOURCE = 30
 # Telegram Bot configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Optional: for direct messaging to specific chat
+TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID")  # Your personal Telegram user ID
 TELEGRAM_NOTIFICATION_THRESHOLD = 0.7  # Minimum similarity score to send notification
 
 # Embedding Matcher configuration

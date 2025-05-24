@@ -1,11 +1,14 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import sseclient
 from database import ArticleDatabase
 import config
+from notifications import notification_manager
+import asyncio
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # Configure the page
 st.set_page_config(
@@ -235,5 +238,64 @@ def main():
     if not st.session_state.articles:
         st.info("No matching articles found. Try refreshing or check if the API is running.")
 
+def check_notifications_periodically():
+    """Check for new notifications periodically"""
+    while True:
+        try:
+            # Get the current script run context
+            ctx = st.runtime.scriptrunner.get_script_run_ctx()
+            if ctx is None:
+                # If running in a thread without context, create a new one
+                from streamlit.runtime.scriptrunner import add_script_run_ctx
+                import threading
+                ctx = add_script_run_ctx(threading.current_thread())
+            
+            if st.session_state.get('notifications_enabled', False):
+                # Run the async function in the event loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(notification_manager.check_and_notify())
+                loop.close()
+            
+            # Sleep for 5 minutes between checks
+            time.sleep(300)
+            
+        except Exception as e:
+            print(f"Error in notification thread: {e}")
+            time.sleep(60)  # Wait a minute before retrying on error
+
 if __name__ == "__main__":
-    main() 
+    # Initialize session state for notifications
+    if 'notifications_enabled' not in st.session_state:
+        st.session_state.notifications_enabled = False
+    
+    # Add notification toggle to the sidebar
+    with st.sidebar:
+        st.subheader("🔔 Notifications")
+        if not notification_manager.enabled:
+            st.warning("Telegram notifications are not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID in .env")
+        else:
+            new_status = st.toggle("Enable Notifications", 
+                                value=st.session_state.notifications_enabled,
+                                disabled=not notification_manager.enabled)
+            
+            if new_status != st.session_state.notifications_enabled:
+                st.session_state.notifications_enabled = new_status
+                st.rerun()
+            
+            if st.session_state.notifications_enabled:
+                st.success("Notifications are enabled. You'll receive alerts for new matches.")
+                # Start the notification check in a separate thread
+                import threading
+                from streamlit.runtime.scriptrunner import add_script_run_ctx
+                
+                if not hasattr(st.session_state, 'notification_thread') or not st.session_state.notification_thread.is_alive():
+                    st.session_state.notification_thread = threading.Thread(
+                        target=check_notifications_periodically,
+                        daemon=True
+                    )
+                    # Add the Streamlit context to the thread
+                    add_script_run_ctx(st.session_state.notification_thread)
+                    st.session_state.notification_thread.start()
+    
+    main()
