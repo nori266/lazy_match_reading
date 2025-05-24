@@ -1,10 +1,12 @@
 from typing import List, Dict, Generator
 import logging
+import time
 from embedding_matcher import EmbeddingMatcher
 import requests
 import config
 from database import ArticleDatabase
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -61,7 +63,7 @@ class ArticleMatcher:
             logger.error(f"Error processing questions/topics: {str(e)}")
             return []
 
-    def _verify_with_llm(self, article: Dict, questions: List[str]) -> List[Dict]:
+    def _verify_with_llm(self, article: Dict, questions: List[str], retry_count: int = 3) -> List[Dict]:
         """Verify article relevance against multiple questions/topics with a single LLM call"""
         if not questions:
             return []
@@ -84,63 +86,98 @@ Example:
 2. no
 3. no"""
 
-        try:
-            if config.LLM_TYPE == "ollama":
-                response = requests.post(
-                    self.llm_url,
-                    json={
-                        "model": self.llm_model,
-                        "prompt": prompt,
-                        "stream": False
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                response_text = result.get("response", "")
-            else:  # Gemini
-                response = self.llm_model.generate_content(prompt)
-                response_text = response.text
-            
-            # Parse the response into a dictionary of {question: answer}
-            answers = {}
-            for line in response_text.split('\n'):
-                line = line.strip()
-                if not line or not line[0].isdigit():
-                    continue
-                try:
-                    # Extract question number and answer (e.g., "1. yes" -> (0, "yes"))
-                    parts = line.split('.', 1)
-                    if len(parts) == 2:
-                        q_num = int(parts[0].strip()) - 1  # Convert to 0-based index
-                        answer = parts[1].strip().lower()
-                        if 0 <= q_num < len(questions):
-                            answers[questions[q_num]] = answer
-                except (ValueError, IndexError):
-                    continue
-            
-            # Log the LLM's response
-            logger.info(f"LLM verification for article '{article['title']}' completed with {len(answers)} answers")
-            
-            # Return list of results in the same order as input questions
-            results = []
-            for q in questions:
-                answer = answers.get(q, 'no')  # Default to 'no' if answer not found
-                results.append({
-                    'question': q,
-                    'is_relevant': answer == 'yes',
-                    'llm_response': answer
-                })
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error verifying with {config.LLM_TYPE}: {str(e)}")
-            # Return default 'no' for all questions in case of error
-            return [{
-                'question': q,
-                'is_relevant': False,
-                'llm_response': f"Error: {str(e)}"
-            } for q in questions]
+        last_exception = None
+        for attempt in range(retry_count):
+            try:
+                if config.LLM_TYPE == "ollama":
+                    try:
+                        response = requests.post(
+                            self.llm_url,
+                            json={
+                                "model": self.llm_model,
+                                "prompt": prompt,
+                                "stream": False
+                            },
+                            timeout=60  # Add timeout to prevent hanging
+                        )
+                        response.raise_for_status()
+                        result = response.json()
+                        response_text = result.get("response", "")
+                    except requests.exceptions.RequestException as e:
+                        if hasattr(e, 'response') and hasattr(e.response, 'status_code') and e.response.status_code == 429 and attempt < retry_count - 1:
+                            wait_time = 60  # Wait for 60 seconds
+                            logger.warning(f"Rate limited (429). Waiting for {wait_time} seconds before retry (attempt {attempt + 1}/{retry_count})")
+                            time.sleep(wait_time)
+                            last_exception = e
+                            continue
+                        raise
+                else:  # Gemini
+                    try:
+                        response = self.llm_model.generate_content(prompt)
+                        response_text = response.text
+                    except google_exceptions.ResourceExhausted as e:
+                        if "quota" in str(e).lower() and attempt < retry_count - 1:
+                            wait_time = 60  # Wait for 60 seconds
+                            logger.warning(f"Quota exceeded. Waiting for {wait_time} seconds before retry (attempt {attempt + 1}/{retry_count})")
+                            time.sleep(wait_time)
+                            last_exception = e
+                            continue
+                        raise
+                    except Exception as e:
+                        logger.error(f"Gemini API error: {str(e)}")
+                        last_exception = e
+                        if attempt < retry_count - 1:
+                            time.sleep(5)  # Shorter delay for non-quota related errors
+                            continue
+                        raise
+
+                # Parse the response into a dictionary of {question: answer}
+                answers = {}
+                for line in response_text.split('\n'):
+                    line = line.strip()
+                    if not line or not line[0].isdigit():
+                        continue
+                    try:
+                        # Extract question number and answer (e.g., "1. yes" -> (0, "yes"))
+                        parts = line.split('.', 1)
+                        if len(parts) == 2:
+                            q_num = int(parts[0].strip()) - 1  # Convert to 0-based index
+                            answer = parts[1].strip().lower()
+                            if 0 <= q_num < len(questions):
+                                answers[questions[q_num]] = answer
+                    except (ValueError, IndexError):
+                        continue
+                
+                # Log the LLM's response
+                logger.info(f"LLM verification for article '{article['title']}' completed with {len(answers)} answers")
+                
+                # Return list of results in the same order as input questions
+                results = []
+                for q in questions:
+                    answer = answers.get(q, 'no')  # Default to 'no' if answer not found
+                    results.append({
+                        'question': q,
+                        'is_relevant': answer == 'yes',
+                        'llm_response': answer
+                    })
+                
+                return results
+                
+            except Exception as e:
+                last_exception = e
+                if attempt == retry_count - 1:  # Last attempt
+                    logger.error(f"Error verifying with {config.LLM_TYPE} after {retry_count} attempts: {str(e)}")
+                    break
+                time.sleep(5)  # Default delay between retries
+                continue
+        
+        # If we get here, all retries failed
+        error_msg = str(last_exception) if last_exception else "Unknown error"
+        return [{
+            'question': q,
+            'is_relevant': False,
+            'llm_response': f"Error: {error_msg}"
+        } for q in questions]
 
     def process_article(self, article: Dict) -> Dict:
         """Process an article to find matching questions and topics using two-stage filtering"""
