@@ -68,8 +68,6 @@ Articles are fetched from Hacker News and TechCrunch.
 # Initialize database
 db = ArticleDatabase()
 
-API_URL = "http://localhost:8000/fetch-news"
-
 def format_date(date_str):
     """Format the date string to a more readable format"""
     try:
@@ -180,51 +178,22 @@ def main():
     
     # Fetch and display new news
     with st.spinner("Fetching and analyzing news articles..."):
-        try:
-            if API_URL:  # Local development - use FastAPI server
-                # Create SSE client
-                response = requests.get(API_URL, stream=True)
-                client = sseclient.SSEClient(response)
-                
-                # Process each event as it arrives
-                for event in client.events():
-                    if event.data:
-                        try:
-                            data = json.loads(event.data)
-                            if 'error' in data:
-                                st.error(f"Error: {data['error']}")
-                                break
-                            
-                            # Add new article to session state
-                            st.session_state.articles.insert(0, data)  # Add to beginning
-                            st.session_state.articles = st.session_state.articles[:30]  # Keep only 30 most recent
-                            
-                            # Update the display immediately for each new article
-                            with articles_placeholder.container():
-                                st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
-                                # Display only the most recent article first
-                                display_article(st.session_state.articles[0], is_new=True)
-                                # Then display all previous articles
-                                for article in st.session_state.articles[1:]:
-                                    display_article(article)
-                        except json.JSONDecodeError:
-                            continue
-            else:  # Streamlit Share - process articles directly
-                if not questions_text.strip() and not topics_text.strip():
-                    st.warning("Please enter some questions or topics to match against.")
-                else:
-                    with st.spinner("Processing articles with your questions and topics..."):
-                        new_articles = process_articles_directly(questions_text, topics_text)
-                        if new_articles:
-                            st.session_state.articles = new_articles[:30]  # Keep only 30 most recent
-                            st.rerun()  # Rerun to update the display with new articles
-                        else:
-                            st.info("No new matching articles found.")
-                        
-                        with articles_placeholder.container():
-                            st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
-                            for article in st.session_state.articles:
-                                display_article(article)
+        try:  # Streamlit Share - process articles directly
+            if not questions_text.strip() and not topics_text.strip():
+                st.warning("Please enter some questions or topics to match against.")
+            else:
+                with st.spinner("Processing articles with your questions and topics..."):
+                    new_articles = process_articles_directly(questions_text, topics_text)
+                    if new_articles:
+                        st.session_state.articles = new_articles[:30]  # Keep only 30 most recent
+                        st.rerun()  # Rerun to update the display with new articles
+                    else:
+                        st.info("No new matching articles found.")
+                    
+                    with articles_placeholder.container():
+                        st.subheader(f"Showing {len(st.session_state.articles)} most recent matching articles")
+                        for article in st.session_state.articles:
+                            display_article(article)
         except Exception as e:
             st.error(f"Error processing articles: {str(e)}")
     
