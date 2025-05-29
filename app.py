@@ -210,7 +210,7 @@ def check_notifications_periodically():
                 loop.close()
             
             # Sleep for 5 minutes between checks
-            time.sleep(300)
+            time.sleep(3600)
             
         except Exception as e:
             print(f"Error in notification thread: {e}")
