@@ -5,9 +5,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Environment detection
+
+# Note: hard coded those variables to test streamlit share behavior locally
 # IS_MAC = platform.system() == "Darwin"
 IS_MAC = False
-IS_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING", "false").lower() == "true"
+
+# IS_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING", "false").lower() == "true"
+IS_STREAMLIT = True
 
 # News API configuration
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")

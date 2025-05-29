@@ -68,13 +68,7 @@ Articles are fetched from Hacker News and TechCrunch.
 # Initialize database
 db = ArticleDatabase()
 
-# API endpoint configuration
-if config.IS_STREAMLIT:
-    # In Streamlit Share, we'll process articles directly
-    API_URL = None
-else:
-    # Local development - connect to FastAPI server
-    API_URL = "http://localhost:8000/fetch-news"
+API_URL = "http://localhost:8000/fetch-news"
 
 def format_date(date_str):
     """Format the date string to a more readable format"""
