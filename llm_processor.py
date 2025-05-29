@@ -13,11 +13,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ArticleMatcher:
-    def __init__(self, questions_text="", topics_text=""):
+    def __init__(self, input_text=""):
         self.matcher = EmbeddingMatcher()
         self.db = ArticleDatabase()
-        self.questions_text = questions_text
-        self.topics_text = topics_text
+        self.input_text = input_text
         
         # Initialize LLM based on environment
         if config.LLM_TYPE == "ollama":
@@ -34,33 +33,32 @@ class ArticleMatcher:
         try:
             questions = []
             
-            if config.IS_STREAMLIT and (self.questions_text or self.topics_text):
+            if config.IS_STREAMLIT and self.input_text:
                 # Use provided text in Streamlit environment
-                if self.questions_text:
-                    questions.extend([line.strip("- ").strip() for line in self.questions_text.split("\n") if line.strip()])
-                if self.topics_text:
-                    questions.extend([line.strip("- ").strip() for line in self.topics_text.split("\n") if line.strip()])
+                questions.extend([line.strip("- ").strip() for line in self.input_text.split("\n") if line.strip()])
             else:
                 # Fall back to reading from files
                 try:
-                    # Read questions from question_list.md
-                    with open("question_list.md", "r") as f:
-                        content = f.read()
-                        questions.extend([line.strip("- ").strip() for line in content.split("\n") if line.strip()])
+                    # Read from both files into a single list
+                    for filename in ["question_list.md", "topic_list.md"]:
+                        try:
+                            with open(filename, "r") as f:
+                                content = f.read()
+                                questions.extend([line.strip("- ").strip() for line in content.split("\n") if line.strip()])
+                        except FileNotFoundError:
+                            logger.warning(f"{filename} not found, skipping...")
                     
-                    # Read topics from topic_list.md
-                    with open("topic_list.md", "r") as f:
-                        content = f.read()
-                        topics = [line.strip("- ").strip() for line in content.split("\n") if line.strip()]
-                        questions.extend(topics)
-                except FileNotFoundError:
-                    logger.warning("Question or topic files not found. Please provide questions and topics in the app.")
+                    if not questions:
+                        logger.warning("No questions or topics found in files. Please provide input in the app.")
+                        return []
+                except Exception as e:
+                    logger.warning(f"Error reading files: {str(e)}. Please provide input in the app.")
                     return []
             
-            logger.info(f"Loaded {len(questions)} total items (questions + topics) for matching")
+            logger.info(f"Loaded {len(questions)} total items for matching")
             return questions
         except Exception as e:
-            logger.error(f"Error processing questions/topics: {str(e)}")
+            logger.error(f"Error processing input: {str(e)}")
             return []
 
     def _verify_with_llm(self, article: Dict, questions: List[str], retry_count: int = 3) -> List[Dict]:
@@ -191,27 +189,19 @@ Example:
             
             # Second stage: Verify matches with LLM (batch verification)
             if similar_matches:
-                # Group matches by type for batch processing
-                matches_by_type = {}
-                for match in similar_matches:
-                    is_topic = match["text"] in [line.strip("- ").strip() for line in open("topic_list.md").read().split("\n") if line.strip()]
-                    match_type = "topic" if is_topic else "question"
-                    matches_by_type.setdefault(match_type, []).append(match)
+                # Process all matches in a single batch
+                questions = [m["text"] for m in similar_matches]
+                verifications = self._verify_with_llm(article, questions)
                 
-                # Process all matches in batches by type
                 verified_matches = []
-                for match_type, matches in matches_by_type.items():
-                    questions = [m["text"] for m in matches]
-                    verifications = self._verify_with_llm(article, questions)
-                    
-                    for match, verification in zip(matches, verifications):
-                        if verification["is_relevant"]:
-                            verified_matches.append({
-                                "question": match["text"],
-                                "relevance": f"Verified {match_type} match (similarity: {match['score']:.2f})",
-                                "llm_response": verification["llm_response"],
-                                "type": match_type
-                            })
+                for match, verification in zip(similar_matches, verifications):
+                    if verification["is_relevant"]:
+                        verified_matches.append({
+                            "question": match["text"],
+                            "relevance": f"Verified match (similarity: {match['score']:.2f})",
+                            "llm_response": verification["llm_response"],
+                            "type": "match"
+                        })
             else:
                 verified_matches = []
             
